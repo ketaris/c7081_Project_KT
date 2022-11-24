@@ -1,0 +1,613 @@
+---
+title: "224038_Katie_Taris_c7081_Project"
+author: "Katie Taris"
+date: "2022-11-23"
+output:
+  word_document: default
+  html_document: default
+---
+**GitHub Repository**
+
+https://github.com/ketaris/c7081_Project_KT
+
+**Background**
+
+Wine is famously difficult to describe by a consumer[3]. It can usually be communicated if the wine is pleasing or not, but describing which aspects and characteristics are the deciding factors is more difficult[3]. A wheel of terminology containing standardised mouth-feel terms was implemented in the beer industry before the wine industry[3]. Although one now exists for the wine industry, it often requires experience to know when to use the terms[3]. Despite not being easy to accurately obtain, a wine quality measurement is important for the producers to measure output standards and set prices of their product[1]. Easier parameters to measure in wine include physicochemical tests like pH and density, made simpler without the need for human interpretation[1]. If these laboratory tests could be analysed for their relationship with quality, it would give producers a reliable and reproducible standard in which to rate the quality of their wine[1]. 
+Amongst these tests is the alcohol content of the wine. It has been proposed that climate change is increasing sugar levels, which in turn is increasing wine alcohol levels[4]. This is contrary to the increasing trend for alcoholic drinks with reduced alcohol levels. This need arises from awareness of health related to alcohol consumption, and potential consequences like violating drink driving laws[4]. It is therefore of interest to see how measurable components in the wine also relate to alcohol content, and in the future see if altering the former would change the latter. It is the goal of this analysis to see the potential relationships between physicochemical tests to both wine quality and alcohol content. 
+
+
+**Methods**
+
+
+The analysis was conducted using R and RStudio. Finding the relationship between physicochemical tests and quality was treated as a classification problem. The potential relationship between physicochemical tests and alcohol content was treated as a regression problem. 
+
+```{r 01 Setup, include = TRUE}
+## set working directory
+setwd("C:/Users/Katie/Documents/RStudio")
+getwd()
+
+## Load necessary libraries
+
+library(BART)
+library(boot)
+library(class)
+library(dplyr)
+library(e1071)
+library(gbm)
+library(ISLR)
+library(ISLR2)
+library(leaps)
+library(MASS)
+library(randomForest)
+library(tree)
+
+## Import red wine data
+winedata <- read.csv("winequality-red.csv")
+head(winedata)
+summary(winedata)
+```
+
+Once the initial setup was completed, classification of quality was evaluated with different methods. 
+
+```{r 02 Classification of Quality, include = TRUE}
+
+cor(winedata)
+train2 <- (winedata$density < 0.99675)
+class(train2)
+winedata_test <- winedata[!train2, ]
+dim(winedata_test)
+quality_test <- winedata$quality[!train2]
+```
+
+A correlation test was run on the data to give a starting point for classification using the 4 variables with the strongest correlation. This is on a 0-1 scale and a higher score means higher correlation between the terms. The data was then divided into training and test sections. 
+
+```{r 03 Classification - LDA, include = TRUE}
+
+## LDA - Linear Discriminant Analysis 4 variables
+lda.fit4 <- lda(quality ~ volatile.acidity + citric.acid + sulphates + alcohol,
+               data = winedata, subset = train2)
+lda.fit4
+plot(lda.fit4)
+lda.pred4 = predict(lda.fit4, winedata_test)
+names(lda.pred4)
+lda.class4 = lda.pred4$class
+table(lda.class4, quality_test)
+mean(lda.class4 == quality_test)
+sum(lda.pred4$posterior[ , 1] >= 0.5)
+sum(lda.pred4$posterior[ , 1] < 0.5)
+sum(lda.pred4$posterior[ , 1] > .9)
+
+## LDA - Linear Discriminant Analysis 2 variables
+lda.fit2 <- lda(quality ~ volatile.acidity + alcohol,
+               data = winedata, subset = train2)
+lda.fit2
+plot(lda.fit2)
+lda.pred2 = predict(lda.fit2, winedata_test)
+names(lda.pred2)
+lda.class2 = lda.pred2$class
+table(lda.class2, quality_test)
+mean(lda.class2 == quality_test)
+sum(lda.pred2$posterior[,1] >= 0.5)
+sum(lda.pred2$posterior[,1] < 0.5)
+sum(lda.pred2$posterior[ , 1] > .9)
+```
+
+The quality variable has 6 possible categories. Linear Discriminant Analysis (LDA) was used as a method capable of doing classification with two or more classes. It was performed with 4 variables with the highest correlation, and again with 2 variables. The mean success rate of 4 and 2 variables was 53.7% and 54.6% respectively.
+The 4-variable model only had 3 predictions above 50% confidence, and 1 above 90% confidence. The 2-variable model only had 1 above 50% confidence, and none above 90% confidence. Neither model showed strong prediction power. 
+
+```{r 04 Classification - KNN, include = TRUE}
+
+## Try with 2 highest correlated variables
+## Split into training and test data 
+train.X <- cbind(winedata$volatile.acidity, winedata$alcohol)[train2, ]
+test.X <- cbind(winedata$volatile.acidity, winedata$alcohol)[!train2, ]
+train.Quality <- winedata$quality[train2]
+
+## Perform KNN with k=1
+set.seed(6)
+knn.pred <- knn(train.X, test.X, train.Quality, k = 1)
+table(knn.pred, quality_test)
+## Calculate results
+dim(winedata_test)
+(5+241+105+10) / 801
+
+## Repeat KNN with k=3
+set.seed(7)
+knn.pred2 <- knn(train.X, test.X, train.Quality, k = 3)
+table(knn.pred2, quality_test)
+mean(knn.pred2 == quality_test)
+
+## Repeat KNN with k=10
+set.seed(9)
+knn.pred3 <- knn(train.X, test.X, train.Quality, k = 10)
+table(knn.pred3, quality_test)
+mean(knn.pred3 == quality_test)
+
+## See if standardizing the data helps with KNN
+standardized.X <- scale(winedata[,-12])
+
+##Resplit the standardized data
+test <- 1:1120
+train.X2 <- standardized.X[-test, ]
+test.X2 <- standardized.X[test, ]
+train.Y2 <- winedata$quality[-test]
+test.Y2 <- winedata$quality[test]
+
+## Perform KNN Standardized with k=1 
+set.seed(4)
+knn.pred4 <- knn(train.X2, test.X2, train.Y2, k=1)
+table(knn.pred4, test.Y2)
+mean(test.Y2 != knn.pred4)
+
+## Perform KNN Standardized with k=3
+set.seed(5)
+knn.pred5 <- knn(train.X2, test.X2, train.Y2, k=3)
+table(knn.pred5, test.Y2)
+mean(test.Y2 != knn.pred5)
+
+## Perform KNN Standarized with k=6
+set.seed(6)
+knn.pred6 <- knn(train.X2, test.X2, train.Y2, k=6)
+table(knn.pred6, test.Y2)
+mean(test.Y2 != knn.pred6)
+```
+KNN was performed as another classification method. The data was analyzed raw, and also standardized to make the scales similar between different variables. Three different values of K were tested for each, to see if increasing the number of nearest neighbours helped the model. Success rates for raw data ranged from 45.1% to 55.0%, at increasing rates of K. Success rates for standardized data ranged from 48.8% to 49.4% at increasing rates of K. 
+
+```{r 05 Classification - Support Vector Machines, include = TRUE}
+
+## Perform SVM
+set.seed(4)
+train_SVM <- sample(1:nrow(winedata),1200)
+x <- winedata[ ,1:11]
+y <- winedata[ ,"quality"]
+xtrainSVM <- x[train_SVM, ]
+ytrainSVM <- y[train_SVM]
+xtestSVM <- x[-train_SVM, ]
+ytestSVM <- y[-train_SVM]
+table(ytrainSVM)
+
+dat <- data.frame(
+  x=xtrainSVM,
+  y=as.factor(ytrainSVM)
+)
+out <- svm(y ~ ., data = dat, kernel = "linear", cost = 10)
+summary(out)
+table(out$fitted, dat$y)
+
+## Calculate training success rate
+(353+336)/1200
+
+dat.te <- data.frame(x = xtestSVM,
+                     y = as.factor(ytestSVM))
+pred.te <- predict(out, newdata = dat.te)
+table(pred.te, dat.te$y)
+
+## Calculate test data success rate
+(134+101)/(1599-1200)
+```
+
+A Support Vector Machine was tried as a classification method as they also have the capability of differentiating between more than two levels. This method was again performed on training and test data. The training classification success rate was 57.4% and the test success rate was 58.9%, which shows an improvement from the other models. 
+
+
+```{r 06 Classification - Decision Trees, include = TRUE}
+
+## Quality of 7 or 8 = High 
+attach(winedata)
+High <- factor(ifelse (quality < 7, "No", "Yes"))
+winedataDT <- data.frame(winedata, High)
+tree.winedata <- tree(High ~ . -quality, winedataDT)
+summary(tree.winedata)
+
+## Plotting decision trees
+plot(tree.winedata)
+text(tree.winedata, pretty = 0, cex = 0.6)
+tree.winedata
+
+## Perform on training and test data
+set.seed(2)
+train_tree <- sample(1:nrow(winedataDT), 1100) 
+winedata.test.tree <- winedataDT[-train_tree, ]
+High.test <- High[-train_tree]
+tree.winedata2 <- tree(High ~ . -quality,
+                       winedataDT, subset = train_tree)
+tree.pred <- predict(tree.winedata2, winedata.test.tree, type = "class")
+table(tree.pred, High.test)
+## Calculate % correct
+(392+34) / (392+35+38+34)
+
+## Prune the tree
+set.seed(7)
+cv.winedata <- cv.tree(tree.winedata2, FUN = prune.misclass)
+names(cv.winedata)
+cv.winedata #size vs. dev shows optimal # nodes
+
+## Plot data to see optimal # nodes
+par(mfrow = c(1,2))
+plot(cv.winedata$size, cv.winedata$dev, type = "b",
+     pch=16, col = "green")
+plot(cv.winedata$k, cv.winedata$dev, type = "b",
+     pch=16, col = "blue")
+prune.winedata <- prune.misclass(tree.winedata2, best = 6)
+par(mfrow=c(1,1))
+plot(prune.winedata)
+text(prune.winedata, pretty = 0)
+
+## Test pruned tree on test data
+tree.pred2 <- predict(prune.winedata, winedata.test.tree, type = "class")
+table(tree.pred2, High.test)
+(416+21)/(416+48+14+21)
+```
+
+Decision trees proved to be an interesting model for the classification problem. Here a quality of 7 or 8 was denoted as "High", and the other 4 categories were not "High". Originally the misclassification error was 9.9% and when the tree was applied to the test data the success error was 85.4%. The tree was pruned in an attempt to seek improvement. The tree was shrunk to 6 nodes and had a success error rate of 87.6%.These were the highest success rates of all the classification models.
+
+```{r 07 Regression - Model Selection, include = TRUE}
+
+## Best subset
+regfit.full <- regsubsets(alcohol ~ . - quality, 
+                          data = winedata,
+                          nvmax = 10)
+reg.summary <- summary(regfit.full)
+reg.summary 
+
+## Plotting specs to decide which model is best
+par(mfrow = c(2,2))
+plot(reg.summary$rss,
+     xlab = "Number of Variables",
+     ylab = "RSS")
+plot(reg.summary$adjr2,
+     xlab = "Number of Variables",
+     ylab = "Adjusted Rsq")
+plot(reg.summary$cp,
+     xlab = "Number of Variables",
+     ylab = "Cp")
+plot(reg.summary$bic, 
+     xlab = "Number of Variables",
+     ylab = "BIC")
+which.max(reg.summary$adjr2)
+which.min(reg.summary$cp)
+which.min(reg.summary$bic)
+
+## Stepwise regression - Forward
+regfit.fwd <- regsubsets(alcohol ~ . -quality,
+                         data = winedata,
+                         nvmax = 10,
+                         method = "forward")
+summary(regfit.fwd)
+
+## Stepwise regression - Backward
+regfit.bwd <- regsubsets(alcohol ~ . -quality,
+                         data = winedata,
+                         nvmax = 10, 
+                         method = "backward")
+summary(regfit.bwd)
+
+## Divide data into training and test set to 
+## choose best model
+
+set.seed(1)
+train <- sample(c(TRUE, FALSE), nrow(winedata),
+                replace = TRUE)
+test <- (!train)
+regfit.best <- regsubsets(alcohol ~ . - quality,
+                          data = winedata[train, ],
+                          nvmax = 10)
+test.mat <- model.matrix(alcohol ~ . - quality,
+                         data = winedata[test, ])
+val.errors <- rep(NA, 10)
+for(i in 1:10) {
+  coefi <- coef(regfit.best, id = i)
+  pred <- test.mat[ ,names(coefi)] %*% coefi
+  val.errors[i] <- mean((winedata$alcohol[test] - pred)^2)
+}
+val.errors
+which.min(val.errors)
+coef(regfit.best, 9)
+
+par(mfrow = c(1,1))
+plot(val.errors, type = "b",
+     pch = 16, col = "blue",
+     main = "Val Errors Plot")
+
+## Automating those steps
+predict.regsubsets <- function(object,
+                               newdata, id, ...){
+  form <- as.formula(object$call[[ 2 ]])
+  mat <- model.matrix(form, newdata )
+  coefi <- coef (object, id = id)
+  xvars <- names (coefi)
+  mat [, xvars] %*% coefi
+}
+
+#Find best fit with whole set,
+#not just training data
+#see if best variables are different
+regfit.best <- regsubsets(alcohol ~ . - quality,
+                          data = winedata, nvmax = 10)
+coef(regfit.best, 9)
+
+## Choose a model using cross validation
+k <- 10
+n <- nrow(winedata)
+set.seed(1)
+folds <- sample(rep(1:k, length = n))
+cv.errors <- matrix(NA, k, 10,
+                    dimnames = 
+                      list(NULL, paste (1:10)))
+#nested for() loops
+for(j in 1:k){
+  best.fit <- regsubsets(alcohol ~ . -quality,
+                         data = winedata[folds != j, ], nvmax = 10)
+  for(i in 1:10){
+    pred <- predict(best.fit, winedata[folds == j, ], id = i)
+    cv.errors[j, i] <- mean((winedata$alcohol[folds == j] - pred)^2)
+  }
+}
+mean.cv.errors <- apply(cv.errors, 2, mean)
+mean.cv.errors
+par(mfrow = c(1,1))
+plot(mean.cv.errors, type = "b",
+     pch = 16, col = "purple")
+
+which.min(mean.cv.errors) 
+
+## Perform best subset selection on full data to get best model
+reg.best <- regsubsets(alcohol ~ . -quality, data = winedata,
+                       nvmax = 10)
+coef(reg.best, 9)
+```
+
+The regression question was started with model selection analysis. Although an important question is whether the data fits a linear model or not, with 10 variables as putative additions to the linear model, including polynomial terms and potential interactions between variables, the model selection was a method to gain a direction on the regression question. Model selection was completed on the full data, in stepwise forward and backward directions, and applied to training and test data. 
+The results regarding the important variables were very similar with forward and backward stepwise selection highlighting the same top 5 variables: density, fixed acid, pH, residual sugar and sulphates. 
+
+```{r 08 Regression - Decision Trees, include = TRUE}
+set.seed(1)
+train3 <- sample(1:nrow(winedata), nrow(winedata)/2)
+tree.winedata3 <- tree(alcohol ~ .-quality, winedata, subset= train3)
+summary(tree.winedata3)
+plot(tree.winedata3)
+text(tree.winedata3, pretty = 0)
+
+## Prune tree
+cv.winedata3 <- cv.tree(tree.winedata3)
+plot(cv.winedata3$size, cv.winedata3$dev, type = "b")
+prune.winedata3 <- prune.tree(tree.winedata3, best = 7)
+plot(prune.winedata3)
+text(prune.winedata3, pretty = 0)
+
+## Cross validation
+yhat <- predict(tree.winedata3, newdata = winedata[-train3, ])
+winedata.test.tree2 <- winedata[-train3, "alcohol"]
+plot(yhat, winedata.test.tree2)
+abline(0,1)
+mean((yhat - winedata.test.tree2)^2) #need sqrt(MSE)
+
+## Bagging
+set.seed(1)
+bag.winedata <- randomForest(alcohol ~ . -quality,
+                             data = winedata,
+                             subset = train3, mtry = 10,
+                             importance = TRUE)
+yhat.bag <- predict(bag.winedata, newdata =  winedata[-train3, ])
+plot(yhat.bag, winedata.test.tree2)
+abline(0,1)
+mean((yhat.bag - winedata.test.tree2)^2)
+
+## Change number of trees
+bag.winedata2 <- randomForest(alcohol ~ . -quality,
+                              data = winedata,
+                              subset=train3,
+                              mtry=10, 
+                              ntree=25)
+yhat.bag2 <- predict(bag.winedata2, newdata = winedata[-train3, ])
+mean((yhat.bag2 - winedata.test.tree2)^2)
+
+## Testing growing random forest
+set.seed(1)
+rf.winedata <- randomForest(alcohol ~ . -quality,
+                            data = winedata,
+                            subset = train3,
+                            mtry = 6,
+                            importance = TRUE)
+yhat.rf <- predict(rf.winedata, newdata = winedata[-train3, ])
+mean((yhat.rf - winedata.test.tree2)^2)
+
+importance(rf.winedata)
+varImpPlot(rf.winedata)
+
+## Boosting
+set.seed(1)
+boost.winedata <- gbm(alcohol ~ . -quality,
+                      data = winedata[train3, ],
+                      distribution = "gaussian",
+                      n.trees = 5000,
+                      interaction.depth = 4)
+summary(boost.winedata)
+
+## Use boosted model to predict alcohol on test set
+yhat.boost <- predict(boost.winedata,
+                      newdata = winedata[-train3, ],
+                      n.trees = 5000)
+mean((yhat.boost - winedata.test.tree2)^2)
+
+boost.winedata2 <- gbm(alcohol ~ . -quality,
+                       data = winedata[train3, ],
+                       distribution = "gaussian",
+                       n.trees = 5000,
+                       interaction.depth = 4, 
+                       shrinkage = 0.2,
+                       verbose = F)
+yhat.boost2 <- predict(boost.winedata2,
+                       newdata = winedata[-train3, ],
+                       n.trees = 5000)
+mean((yhat.boost2 - winedata.test.tree2)^2)
+
+## Bayesian additive regression trees
+x <- winedata[ ,1:10]
+y <- winedata[ ,"alcohol"]
+xtrain <- x[train3, ]
+ytrain <- y[train3]
+xtest <- x[-train3, ]
+ytest <- y[-train3]
+set.seed(1)
+bartfit <- gbart(xtrain, ytrain, x.test = xtest)
+
+## Find test error
+yhat.bart <- bartfit$yhat.test.mean
+mean((ytest - yhat.bart)^2)
+
+## Check for variable appearances
+ord <- order(bartfit$varcount.mean, decreasing = T)
+bartfit$varcount.mean[ord]
+```
+
+Various methods using decision trees were also implemented to focus on important variables. Bagging ordered density, residual sugar, citric acid, and fixed acid as the top 4 variables, slightly different from the stepwise methods. Boosting still highlighted density and residual sugar as the top 2 variables. The Bayesian additive regression trees yielded the lowest test error and designated density, residual sugar, fixed acid and citric acid as the top 4 variables. In all cases, density was identified as the most important variable in alcohol levels. 
+
+```{r 09 Regression - Linear Model, include = TRUE}
+
+## Simple linear model using density
+lm_density <- lm(alcohol ~ density, data = winedata)
+lm_density
+par(mfrow = c(2,2))
+plot(lm_density)
+par(mfrow = c(1,1))
+summary(lm_density)
+plot(x= winedata$density, y = winedata$alcohol,
+     xlab = "Density",
+     ylab = "Alcohol", 
+     main = "Alcohol as a Function of Density")
+abline(lm_density, col = "red")
+
+## Take log of density
+lm_density_log <- lm(alcohol ~ log(density), data = winedata)
+plot(x=log(winedata$density), y = winedata$alcohol, 
+     xlab= "Log Density", ylab = "Alcohol", main = "Log of Density to Alcohol")
+abline(lm_density_log, col = "red") 
+summary(lm_density_log)
+
+## Multiple regression - multiple variables in linear model
+## Try using density and residual sugar
+lm_sugar_den <- lm(alcohol ~ residual.sugar + density, data = winedata)
+summary(lm_sugar_den)
+## Try using density, residual sugar and citric acid
+lm_dsc <- lm(alcohol ~ density + residual.sugar + citric.acid, data = winedata)
+summary(lm_dsc)
+## Try using all variables
+lm_all <- lm(alcohol ~ . - quality, data = winedata)
+summary(lm_all)
+## Diagnostic plots
+par(mfrow = c(2,2))
+plot(lm_all)
+par(mfrow = c(1,1))
+## Try with all except free sulfur dioxide
+lm_9v <- lm(alcohol ~ . - quality -free.sulfur.dioxide, data = winedata)
+summary(lm_9v)
+
+## Test lm on 5 variables
+lm.5v <- lm(alcohol ~ density + fixed.acidity + residual.sugar + pH + sulphates, 
+            data = winedata)
+summary(lm.5v)
+
+## Test interactions with density
+lm_denint2 <- lm(alcohol ~ density*residual.sugar, 
+                      data = winedata)
+summary(lm_denint2)
+lm_denint3 <- lm(alcohol ~ density*citric.acid, 
+                 data = winedata)
+summary(lm_denint2)
+
+## Test polynomial terms with density
+lm_den2 <- lm(alcohol ~ density + I(density^2), data = winedata)
+summary(lm_den2)
+
+## Anova to compare the models
+anova(lm_density, lm_den2)
+
+## Higher order polynomials
+lm_den6 <- lm(alcohol ~ poly(density, 6), data = winedata)
+summary(lm_den6)
+```
+Various forms of the linear model were examined to fit with the wine data. This included the simple model with only density, taking the log, adding residual sugar and citric acid, using interactions and adding polynomial terms. The best value of adjusted R2 out of all these variations was 0.40. The best adjusted R2 came from the model using all the continuous variables at 0.67. Removing the free sulfur dioxide term that did not show as significant in the model did not change the adjusted R2. Reducing the model to 5 variables (from model selection) yielded an adjusted R2 of 0.66, with the advantage of losing 4 variables from the model. 
+
+```{r 10 Regression - Cross validation of Linear Model, include = TRUE}
+## Create training and test data
+set.seed(5)
+trainCV <- sample(1599, 800)
+lm.cv <- lm(alcohol ~ density, data = winedata, subset = trainCV)
+
+## Use predict on test data
+attach(winedata)
+mean((alcohol - predict(lm.cv, winedata))[-trainCV]^2)
+
+## Test CV on poly data
+## Poly2
+lm.cv2 <- lm(alcohol ~ poly(density, 2),
+             data = winedata, subset = trainCV)
+mean((alcohol - predict(lm.cv2, winedata))[-trainCV]^2)
+
+## Poly3
+lm.cv3 <- lm(alcohol ~ poly(density, 3),
+             data = winedata, subset = trainCV)
+mean((alcohol - predict(lm.cv3, winedata))[-trainCV]^2)
+
+## Leave-one-out CV
+glm.fit <- glm(alcohol ~ density, data = winedata)
+cv.err <- cv.glm(winedata, glm.fit)
+cv.err$delta
+
+## Test on higher order polynomials
+cv.error <- rep(0, 5)
+for (i in 1:5){
+  glm.fit <- glm(alcohol ~ poly(density, i), data = winedata)
+  cv.error[i] <- cv.glm(winedata, glm.fit)$delta[1]
+}
+cv.error
+plot(cv.error, type='b')
+
+## Test CV on full model
+lm.cv4 <- lm(alcohol ~ . -quality, data = winedata, subset = trainCV)
+attach(winedata)
+mean((alcohol - predict(lm.cv4, winedata))[-trainCV]^2)
+
+## Test CV on 5 variable model
+lm.cv5 <- lm(alcohol ~ density + fixed.acidity + residual.sugar + pH + sulphates , data = winedata, subset = trainCV)
+attach(winedata)
+mean((alcohol - predict(lm.cv5, winedata))[-trainCV]^2)
+```
+
+Cross validation was performed on some of the linear models. The results fit the previous conclusions on the different models, where a polynomial fit of higher orders was not advantageous, and the squared term added little benefit. 
+The full model with all terms provided the lowest MSE at 0.41, which is less than half of the MSE of 0.87 of the simple model with only density as a variable. Testing with a 5 variable model only increased the MSE to 0.43. 
+ 
+
+**Results**
+
+There are many applications of data science which seek to avoid human interpretation, including in wine classification. The method that performed the best for designating the 6 categories based on lab tests was support vector machines, although the average success rate was 58.2%. The decision tree method showed a high success rate of 86.5%, but it was not performing the same task as support vector machines. The decision trees were grouping the good wines with a quality value of 7 or 8 into a “High” category, and everything below into one group. This was not a balanced data set, with most of the wines falling into the 5 and 6 range of quality. In the right context, a producer may only want to differentiate which wines would qualify for a higher tier of product[4], and based on easily measurable lab tests, the decision tree could be a very useful tool. 
+
+```{r Pruned Classification Tree, include = TRUE}
+plot(prune.winedata)
+text(prune.winedata, pretty = 0)
+```
+
+The second objective was to find a model where alcohol was estimated using lab tests of the wine. Model selection was used to find the most relevant predictor variables for alcohol content and this was taken forward to the linear models. Through model comparing and cross-validation, a linear model containing all variables provided the best fit to the data with an adjusted R-squared value of 0.67. This is further validated by the fact that although model selection identifies the most important predictor variables, the best model had 9 variables, out of the optional 10. The many model selection tools produced plots comparing number of variables to model error. The full model did have the lowest error, but the graphs all showed a similar pattern of a plateau beginning at 5 variables. It was then worth evaluating if adding the complexity of the extra variables greatly improved the model, or if remaining with 5 variables only sacrificed a small amount of fit. The adjusted R2 only decreased by 0.1 and the CV error only increased by 0.02. These differences show the retention of an improved model, while successfully decreasing the complexity by taking 9 variables down to 5. 
+
+```{r Cross Validation Errors Plot, include = TRUE}
+plot(mean.cv.errors, type = "b", pch = 16, col = "purple", 
+     xlab = "Mean CV Errors", main = "Cross Validation Errors Plot")
+```
+
+Relationships to the physicochemical tests are apparent in the data, although there is not one strong indicator and the interactions are complex. To further improve on the quality classification a more balanced data set with more quality ratings at the higher and lower ends of the scale, could help further train the model. Alcohol content is mainly dependent on 5 different variables. If alcohol content was going to be altered after wine production, it would be beneficial to see which parameters are heavily affected by changes in alcohol content. 
+
+
+**Conclusion**
+
+Many factors go into making a good wine. Some factors can be altered during the growing season in the vineyard, and some can be changed during management of the wine making[2]. The producer needs to be able to monitor the changes occurring at all stages. Finding important relationships for how easily quantifiable measurements translate to different parameters will assist them in maintaining product standards, protecting human health, and advance their business based upon consumer needs and potential future markets.
+
+
+**Literature Cited**
+
+[1] P. Cortez, A. Cerdeira, F. Almeida, T. Matos and J. Reis. Modeling wine preferences by data mining from physicochemical properties. In Decision Support Systems, Elsevier, 47(4):547-553, 2009.
+
+[2] P. Demiglio, and G. J. Pickering. The influence of ethanol and pH on the taste and mouthfeel sensations elicited by red wine. Journal of Food, Agriculture & Environment. 6(3&4):143-150, 2008. 
+
+[3] R. Gawel, A. Oberholster, and I. Leigh Francis. A ‘Mouth-feel Wheel’: terminology for communicating the mouth-feel characteristics of wine. Australian Journal of Grape and Wine Research. 6(3):203-207, 2008. doi.org/10.1111/j.1755-0238.2000.tb00180
+
+[4] A. Manuel Jordao, A. Vilela, and F. Cosme. From Sugar of Grape to Alcohol of Wine: Sensorial Impact of Alcohol in Wine. Beverages. 1:292-310, 2015. doi:10.3390/beverages1040292
